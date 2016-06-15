@@ -1,7 +1,12 @@
 package bradstocks.test;
 
 import android.Manifest;
+import android.bluetooth.BluetoothDevice;
+import android.bluetooth.BluetoothManager;
+import android.content.ComponentName;
 import android.content.Context;
+import android.content.Intent;
+import android.content.ServiceConnection;
 import android.content.pm.PackageManager;
 import android.hardware.Sensor;
 import android.hardware.SensorEvent;
@@ -12,6 +17,7 @@ import android.location.LocationListener;
 import android.location.LocationManager;
 import android.location.LocationProvider;
 import android.os.Handler;
+import android.os.IBinder;
 import android.support.v4.app.ActivityCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
@@ -21,12 +27,86 @@ import android.widget.Button;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import com.mbientlab.metawear.MetaWearBleService;
+import com.mbientlab.metawear.MetaWearBoard;
+import android.util.Log;
+import static com.mbientlab.metawear.MetaWearBoard.ConnectionStateHandler;
+
 import java.io.IOException;
 import java.util.List;
 import java.util.Timer;
 import java.util.TimerTask;
 
-public class MainActivity extends AppCompatActivity {
+public class MainActivity extends AppCompatActivity implements ServiceConnection{
+
+    private MetaWearBleService.LocalBinder serviceBinder;
+    private final String MW_MAC_ADDRESS= "D0:73:6E:F3:AA:12"; //update with your board's MAC address
+    private MetaWearBoard mwBoard;
+    private static final String TAG = "MetaWear";
+    private Button connect;
+
+
+    private final ConnectionStateHandler stateHandler= new ConnectionStateHandler() {
+        @Override
+        public void connected() {
+            Log.i(TAG, "Connected");
+        }
+
+        @Override
+        public void disconnected() {
+            Log.i(TAG, "Connected Lost");
+        }
+
+        @Override
+        public void failure(int status, Throwable error) {
+            Log.e(TAG, "Error connecting", error);
+        }
+    };
+
+    public void retrieveBoard() {
+        final BluetoothManager btManager=
+                (BluetoothManager) getSystemService(Context.BLUETOOTH_SERVICE);
+        final BluetoothDevice remoteDevice=
+                btManager.getAdapter().getRemoteDevice(MW_MAC_ADDRESS);
+
+        // Create a MetaWear board object for the Bluetooth Device
+        mwBoard= serviceBinder.getMetaWearBoard(remoteDevice);
+        mwBoard.setConnectionStateHandler(stateHandler);
+
+    }
+
+   /* public void connectBoard() {
+        mwBoard.setConnectionStateHandler(stateHandler);
+        mwBoard.connect();
+    }*/
+
+    public void pause() {
+        this.t.cancel();
+        this.t = new Timer();
+    }
+
+    public void resume() {
+        //this.t = new Timer();
+        this.t.schedule(new TimerTask(){
+            public void run(){
+                writeHandler.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        if(running) {
+                            try {
+                                payload.writeToFile();
+                            } catch (IOException e) {
+                                e.printStackTrace();
+                            }
+                        }
+                    }
+                });
+            }
+        }, 10, 10);
+    }
+
+
+
     TextView tvPress = null;
     TextView tvMag = null;
     TextView tvAcc = null;
@@ -38,28 +118,38 @@ public class MainActivity extends AppCompatActivity {
     LocationManager locationManager;
     TimerTask writeTask;
     final Handler writeHandler = new Handler();
-    Timer t = new Timer();
+    Timer t;
     Payload payload;
-    Button button;
-    Button button2;
+    Button start;
+    Button stop;
     Toast toast;
 
     float temp;
     float[] temp3;
     double alt, lat, lon;
     float bear;
+    boolean running;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
+        t= new Timer();
+
+        running = false;
 
         Context context = getApplicationContext();
+        context.bindService(new Intent(this, MetaWearBleService.class),
+                this, Context.BIND_AUTO_CREATE);
+
+        Log.i(TAG, "log test");
         CharSequence text = "Write is complete!";
         int duration = Toast.LENGTH_SHORT;
         toast = Toast.makeText(context, text, duration);
-        button = (Button) findViewById(R.id.button);
-        button = (Button) findViewById(R.id.button2);
+        start = (Button) findViewById(R.id.button);
+        stop = (Button) findViewById(R.id.button2);
+        connect = (Button) findViewById(R.id.connect);
+
         temp3 = new float[3];
         locationManager  = (LocationManager) this.getSystemService(Context.LOCATION_SERVICE);
         tvPress = (TextView) findViewById(R.id.textView);
@@ -151,37 +241,54 @@ public class MainActivity extends AppCompatActivity {
             }
         };
 
-        writeTask = new TimerTask(){
+       /* writeTask = new TimerTask(){
             public void run(){
                 writeHandler.post(new Runnable() {
                     @Override
                     public void run() {
-                        try {
-                            payload.writeToFile();
-                        } catch (IOException e) {
-                            e.printStackTrace();
+                        if(running) {
+                            try {
+                                payload.writeToFile();
+                            } catch (IOException e) {
+                                e.printStackTrace();
+                            }
                         }
                     }
                 });
             }
-        };
+        };*/
 
 
-        button.setOnClickListener(new View.OnClickListener(){
-            public void onClick(View v){
-                try {
-                    payload.endFile();
-                    toast.show();
-                    t.cancel();
-                } catch (IOException e) {
-                    e.printStackTrace();
+        stop.setOnClickListener(new View.OnClickListener(){
+            public void onClick(View v) {
+                if (running) {
+                    try {
+                        payload.endFile();
+                        toast.show();
+                        pause();
+                        running = false;
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
                 }
             }
         });
 
-        button.setOnClickListener(new View.OnClickListener(){
+        start.setOnClickListener(new View.OnClickListener(){
             public void onClick(View v){
-                    t.scheduleAtFixedRate(writeTask, 10, 10);
+                if(!running) {
+                    //t = new Timer();
+                    resume();
+                    running = true;
+                }
+            }
+        });
+
+        connect.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                Log.i(TAG, "Clicked connect");
+                mwBoard.connect();
             }
         });
 
@@ -216,6 +323,24 @@ public class MainActivity extends AppCompatActivity {
         //tv1.setMovementMethod(new ScrollingMovementMethod());
 
     }
+
+    @Override
+    public void onDestroy() {
+        super.onDestroy();
+
+        // Unbind the service when the activity is destroyed
+        getApplicationContext().unbindService(this);
+    }
+
+    @Override
+    public void onServiceConnected(ComponentName name, IBinder service) {
+        // Typecast the binder to the service's LocalBinder class
+        serviceBinder = (MetaWearBleService.LocalBinder) service;
+        retrieveBoard();
+    }
+
+    @Override
+    public void onServiceDisconnected(ComponentName componentName) { }
 
 
 
