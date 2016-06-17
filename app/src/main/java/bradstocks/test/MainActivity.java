@@ -15,22 +15,44 @@ import android.hardware.SensorManager;
 import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
-import android.location.LocationProvider;
+import android.media.AudioManager;
+import android.media.ToneGenerator;
 import android.os.Handler;
 import android.os.IBinder;
+import android.renderscript.Float3;
 import android.support.v4.app.ActivityCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
-import android.text.method.ScrollingMovementMethod;
 import android.view.View;
 import android.widget.Button;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import com.mbientlab.metawear.AsyncOperation;
+import com.mbientlab.metawear.Message;
 import com.mbientlab.metawear.MetaWearBleService;
 import com.mbientlab.metawear.MetaWearBoard;
 import android.util.Log;
 import static com.mbientlab.metawear.MetaWearBoard.ConnectionStateHandler;
+import com.mbientlab.metawear.UnsupportedModuleException;
+import com.mbientlab.metawear.module.Bma255Accelerometer;
+import com.mbientlab.metawear.module.Bmi160Accelerometer;
+import com.mbientlab.metawear.module.Led;
+import com.mbientlab.metawear.module.Accelerometer;
+import android.widget.Switch;
+import android.widget.CompoundButton;
+import com.mbientlab.metawear.RouteManager;
+import com.mbientlab.metawear.data.CartesianFloat;
+import com.mbientlab.metawear.module.Bmi160Gyro;
+import com.mbientlab.metawear.module.Bmi160Gyro.*;
+import com.mbientlab.metawear.module.Gpio;
+import com.mbientlab.metawear.module.Bmm150Magnetometer;
+import com.mbientlab.metawear.module.Bmm150Magnetometer.PowerPreset;
+import com.mbientlab.metawear.module.MultiChannelTemperature;
+import com.mbientlab.metawear.module.MultiChannelTemperature.*;
+import com.mbientlab.metawear.module.Bmi160Accelerometer.AccRange;
+import com.mbientlab.metawear.module.Bmi160Accelerometer.OutputDataRate;
+
 
 import java.io.IOException;
 import java.util.List;
@@ -39,17 +61,57 @@ import java.util.TimerTask;
 
 public class MainActivity extends AppCompatActivity implements ServiceConnection{
 
+    ToneGenerator tone;
     private MetaWearBleService.LocalBinder serviceBinder;
-    private final String MW_MAC_ADDRESS= "D0:73:6E:F3:AA:12"; //update with your board's MAC address
+    private final String MW_MAC_ADDRESS= "D0:73:6E:F3:AA:12";
+    private final String MW_MAC_ADDRESS2= "C2:5D:6E:47:85:C2";
     private MetaWearBoard mwBoard;
+    private MetaWearBoard mwBoard2;
+    private Led ledModule;
+    private Led ledModule2;
     private static final String TAG = "MetaWear";
     private Button connect;
+    private Button led1_tog;
+    private Button led2_tog;
+    private Switch accel_switch;
+    private Switch accel_switch2;
+    private Bmi160Accelerometer accelModule;
+    private Bmi160Accelerometer accelModule2;
+    private Bmi160Gyro gyroModule;
+    private Bmi160Gyro gyroModule2;
+    private Gpio gpioModule;
+    Bmm150Magnetometer magModule;
+    Bmm150Magnetometer magModule2;
+    MultiChannelTemperature mcTempModule;
+    MultiChannelTemperature mcTempModule2;
+    private static final float ACC_RANGE = 8.f, ACC_FREQ = 50.f;
+    private static final String STREAM_KEY = "accel_stream";
+    private static final String GYRO_STREAM_KEY = "gyro_stream";
+    final byte GPIO_PIN = 2;
+    int counter;
+    List<Source> tempSources;
+    List<Source> tempSources2;
+    String GPIO;
+
 
 
     private final ConnectionStateHandler stateHandler= new ConnectionStateHandler() {
         @Override
         public void connected() {
             Log.i(TAG, "Connected");
+            connected = true;
+            try {
+                ledModule = mwBoard.getModule(Led.class);
+                accelModule = mwBoard.getModule(Bmi160Accelerometer.class);
+                gyroModule = mwBoard.getModule(Bmi160Gyro.class);
+                gpioModule = mwBoard.getModule(Gpio.class);
+                magModule= mwBoard.getModule(Bmm150Magnetometer.class);
+                mcTempModule= mwBoard.getModule(MultiChannelTemperature.class);
+                tempSources= mcTempModule.getSources();
+
+            } catch (UnsupportedModuleException e) {
+                e.printStackTrace();
+            }
         }
 
         @Override
@@ -60,6 +122,36 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
         @Override
         public void failure(int status, Throwable error) {
             Log.e(TAG, "Error connecting", error);
+        }
+    };
+
+    private final ConnectionStateHandler stateHandler2= new ConnectionStateHandler() {
+        @Override
+        public void connected() {
+            Log.i(TAG, "Connected 2");
+            connected2 = true;
+            try {
+                ledModule2 = mwBoard2.getModule(Led.class);
+                accelModule2 = mwBoard2.getModule(Bmi160Accelerometer.class);
+                gyroModule2 = mwBoard2.getModule(Bmi160Gyro.class);
+                //gpioModule = mwBoard.getModule(Gpio.class);
+                magModule2= mwBoard2.getModule(Bmm150Magnetometer.class);
+                mcTempModule2= mwBoard2.getModule(MultiChannelTemperature.class);
+                tempSources2= mcTempModule2.getSources();
+
+            } catch (UnsupportedModuleException e) {
+                e.printStackTrace();
+            }
+        }
+
+        @Override
+        public void disconnected() {
+            Log.i(TAG, "Connected Lost 2");
+        }
+
+        @Override
+        public void failure(int status, Throwable error) {
+            Log.e(TAG, "Error connecting 2", error);
         }
     };
 
@@ -75,10 +167,18 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
 
     }
 
-   /* public void connectBoard() {
-        mwBoard.setConnectionStateHandler(stateHandler);
-        mwBoard.connect();
-    }*/
+    public void retrieveBoard2() {
+        final BluetoothManager btManager=
+                (BluetoothManager) getSystemService(Context.BLUETOOTH_SERVICE);
+        final BluetoothDevice remoteDevice=
+                btManager.getAdapter().getRemoteDevice(MW_MAC_ADDRESS2);
+
+        // Create a MetaWear board object for the Bluetooth Device
+        mwBoard2= serviceBinder.getMetaWearBoard(remoteDevice);
+        mwBoard2.setConnectionStateHandler(stateHandler2);
+
+    }
+
 
     public void pause() {
         this.t.cancel();
@@ -94,6 +194,21 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
                     public void run() {
                         if(running) {
                             try {
+                                if(counter>200){
+                                    counter = 0;
+                                }
+                                else if(counter > 99){
+                                    gpioModule.setDigitalOut(GPIO_PIN);
+                                    payload.setGPIO("1");
+                                    counter++;
+                                }
+                                else if(counter<100){
+                                    counter++;
+                                    gpioModule.clearDigitalOut(GPIO_PIN);
+                                    payload.setGPIO("0");
+
+                                }
+                                Log.i(TAG, "" + counter);
                                 payload.writeToFile();
                             } catch (IOException e) {
                                 e.printStackTrace();
@@ -107,12 +222,20 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
 
 
 
-    TextView tvPress = null;
+    /*TextView tvPress = null;
     TextView tvMag = null;
     TextView tvAcc = null;
     TextView tvGyro = null;
     TextView tvGPS = null;
     TextView tvTemp = null;
+    */
+    TextView onBoardStatus = null;
+    TextView sensorStaus = null;
+    TextView sampleAcc = null;
+    TextView sampleAcc2 = null;
+    TextView feedback = null;
+
+
     private SensorManager mSensorManager;
     private SensorEventListener mSensorListener;
     LocationManager locationManager;
@@ -127,16 +250,37 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
     float temp;
     float[] temp3;
     double alt, lat, lon;
+    String accel;
+    String gyro;
+    String mag;
+    String temperature;
+    String accel2;
+    String gyro2;
+    String mag2;
+    String temperature2;
     float bear;
     boolean running;
-
+    boolean connected;
+    boolean connected2;
+    boolean sampling;
+    boolean sampling2;
+    boolean LED1;
+    boolean LED2;
+    float tempArr[];
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
         t= new Timer();
 
+        tone = new ToneGenerator(AudioManager.STREAM_ALARM, 100);
+        tempArr = new float[3];
         running = false;
+        connected = false;
+        sampling = false;
+        counter = 0;
+        LED1 = false;
+        LED2 = false;
 
         Context context = getApplicationContext();
         context.bindService(new Intent(this, MetaWearBleService.class),
@@ -149,24 +293,27 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
         start = (Button) findViewById(R.id.button);
         stop = (Button) findViewById(R.id.button2);
         connect = (Button) findViewById(R.id.connect);
+        led2_tog = (Button) findViewById(R.id.led_off);
+        led1_tog = (Button) findViewById(R.id.led_on);
+        accel_switch = (Switch) findViewById(R.id.accel_switch);
+        accel_switch2 = (Switch) findViewById(R.id.accel_switch2);
 
         temp3 = new float[3];
         locationManager  = (LocationManager) this.getSystemService(Context.LOCATION_SERVICE);
-        tvPress = (TextView) findViewById(R.id.textView);
-
-        // tv1.setVisibility(View.GONE);
-        tvPress.setVisibility(View.VISIBLE);
-        tvMag = (TextView) findViewById(R.id.textView2);
-        tvMag.setVisibility(View.VISIBLE);
-        tvAcc = (TextView) findViewById(R.id.textView3);
-        tvAcc.setVisibility(View.VISIBLE);
-        tvGyro = (TextView) findViewById(R.id.textView4);
-        tvGyro.setVisibility(View.VISIBLE);
-        tvGPS = (TextView) findViewById(R.id.textView5);
-        tvGPS.setVisibility(View.VISIBLE);
-        tvGPS.setText("GPS: awaiting connection");
-        //tvTemp = (TextView) findViewById(R.id.textView6);
-        //tvTemp.setVisibility(View.VISIBLE);
+        onBoardStatus = (TextView) findViewById(R.id.textView);
+        onBoardStatus.setVisibility(View.VISIBLE);
+        onBoardStatus.setText("Waiting for GPS");
+        sensorStaus = (TextView) findViewById(R.id.textView2);
+        sensorStaus.setVisibility(View.VISIBLE);
+        sensorStaus.setText("Press connect");
+        sampleAcc = (TextView) findViewById(R.id.tv_accel);
+        sampleAcc.setVisibility(View.VISIBLE);
+        sampleAcc.setText("Waiting for stream1");
+        sampleAcc2 = (TextView) findViewById(R.id.tv_accel2);
+        sampleAcc2.setVisibility(View.VISIBLE);
+        sampleAcc2.setText("Waiting for stream2");
+        feedback = (TextView) findViewById(R.id.feedback);
+        feedback.setVisibility(View.VISIBLE);
 
         payload = new Payload("testData.csv");
 
@@ -180,16 +327,23 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
             @Override
             public final void onSensorChanged(SensorEvent event) {
                 Sensor sensor = event.sensor;
+                if(connected && !connected2) sensorStaus.setText("Device1 connected");
+                if(connected2 && !connected) sensorStaus.setText("Device2 connected");
+                if(connected2 && connected) sensorStaus.setText("Both devices connected");
+                if(sampling) sampleAcc.setText("Feed 1:\n" + accel+"\n"+gyro+"\n"+mag+"\n" +temperature);
+                if(!sampling) sampleAcc.setText("Feed 1 disabled");
+                if(sampling2) sampleAcc2.setText("Feed 2:\n" + accel2+"\n"+gyro2+"\n"+mag2+"\n" +temperature2);
+                if(!sampling2) sampleAcc2.setText("Feed 2 disabled");
                 if (sensor.getType() == Sensor.TYPE_PRESSURE) {
                     temp = event.values[0];
                     payload.setPressure(temp);
-                    tvPress.setText("Pressure:\n" + temp);
+                    //tvPress.setText("Pressure:\n" + temp);
                 } else if (sensor.getType() == Sensor.TYPE_MAGNETIC_FIELD) {
                     temp = event.values[0];
                     payload.setxMag(temp);
                     payload.setyMag(event.values[1]);
                     payload.setzMag(event.values[2]);
-                    tvMag.setText("Mag:\nx: " + temp +"\ny: " + event.values[1] + "\nz: " + event.values[2]);
+                    //tvMag.setText("Mag:\nx: " + temp +"\ny: " + event.values[1] + "\nz: " + event.values[2]);
                 } else if (sensor.getType() == Sensor.TYPE_ACCELEROMETER) {
                     temp3[0] = event.values[0];
                     temp3[1] = event.values[1];
@@ -197,7 +351,7 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
                     payload.setxAcc(temp3[0]);
                     payload.setyAcc(temp3[1]);
                     payload.setzAcc(temp3[2]);
-                    tvAcc.setText("ACC:\nx: " + temp3[0] + "\ny: " + temp3[1] + "\nz: " + temp3[2]);
+                    //tvAcc.setText("ACC:\nx: " + temp3[0] + "\ny: " + temp3[1] + "\nz: " + temp3[2]);
                 } else if (sensor.getType() == Sensor.TYPE_GYROSCOPE) {
                     temp3[0] = event.values[0];
                     temp3[1] = event.values[1];
@@ -205,14 +359,14 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
                     payload.setxGyro(temp3[0]);
                     payload.setyGyro(temp3[1]);
                     payload.setzGyro(temp3[2]);
-                    tvGyro.setText("Gyro:\nx: " + temp3[0] + "\ny: " + temp3[1] + "\nz: " + temp3[2]);
+                    //tvGyro.setText("Gyro:\nx: " + temp3[0] + "\ny: " + temp3[1] + "\nz: " + temp3[2]);
                 }
                 /*else if (sensor.getType() == Sensor.TYPE_AMBIENT_TEMPERATURE) {
                     temp = event.values[0];
                     payload.setTemperature(temp);
                     tvTemp.setText("Temp:\n" + temp);
                 } */else {
-                    tvMag.setText("Sorry");
+                    //tvMag.setText("Sorry");
                 }
 
             }
@@ -226,9 +380,10 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
                 bear = location.getBearing();
                 payload.setLat(lat);
                 payload.setLon(lon);
-                payload.setAlt(alt);
+                payload.setGPSSpeed(location.getSpeed());
                 payload.setBearGPS(bear);
-                tvGPS.setText("GPS:\nlat: " + lat + "\nlong: " + lon + "\nalt: " + alt + "\nbear: " + bear);
+                onBoardStatus.setText("All sensors ready");
+                //tvGPS.setText("GPS:\nlat: " + lat + "\nlong: " + lon + "\nalt: " + alt + "\nbear: " + bear);
             }
 
             public void onStatusChanged(String provider, int status, Bundle extras) {
@@ -265,6 +420,7 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
                     try {
                         payload.endFile();
                         toast.show();
+                        tone.startTone(ToneGenerator.TONE_CDMA_ALERT_CALL_GUARD, 20);
                         pause();
                         running = false;
                     } catch (IOException e) {
@@ -276,10 +432,16 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
 
         start.setOnClickListener(new View.OnClickListener(){
             public void onClick(View v){
-                if(!running) {
-                    //t = new Timer();
-                    resume();
-                    running = true;
+                if(sampling && sampling2) {
+                    if (!running) {
+                        //t = new Timer();
+                        tone.startTone(ToneGenerator.TONE_CDMA_ALERT_CALL_GUARD, 20);
+                        resume();
+                        running = true;
+                    }
+                }
+                else{
+                    feedback.setText("Open both streams before starting");
                 }
             }
         });
@@ -288,7 +450,259 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
             @Override
             public void onClick(View v) {
                 Log.i(TAG, "Clicked connect");
+                sensorStaus.setText("Connecting");
                 mwBoard.connect();
+                mwBoard2.connect();
+            }
+        });
+        led1_tog.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if(!LED1){
+                    Log.i(TAG, "Turn on LED1");
+                    ledModule.configureColorChannel(Led.ColorChannel.BLUE)
+                            .setRiseTime((short) 0).setPulseDuration((short) 1000)
+                            .setRepeatCount((byte) -1).setHighTime((short) 500)
+                            .setHighIntensity((byte) 16).setLowIntensity((byte) 16)
+                            .commit();
+                    ledModule.play(true);
+                    LED1 = true;
+                }
+                else{
+                    Log.i(TAG, "Turn off LED1");
+                    ledModule.stop(true);
+                    LED1 = false;
+                }
+
+            }
+        });
+
+        led2_tog =(Button)findViewById(R.id.led_off);
+        led2_tog.setOnClickListener(new View.OnClickListener() {
+                                       @Override
+                                       public void onClick(View v) {
+                                           if(!LED2){
+                                               Log.i(TAG, "Turn on LED2");
+                                               ledModule2.configureColorChannel(Led.ColorChannel.RED)
+                                                       .setRiseTime((short) 0).setPulseDuration((short) 1000)
+                                                       .setRepeatCount((byte) -1).setHighTime((short) 500)
+                                                       .setHighIntensity((byte) 16).setLowIntensity((byte) 16)
+                                                       .commit();
+                                               ledModule2.play(true);
+                                               LED2 = true;
+                                           }
+                                           else{
+                                               Log.i(TAG, "Turn off LED2");
+                                               ledModule2.stop(true);
+                                               LED2 = false;
+                                           }
+                                       }
+                                   });
+            /* @Override
+            public void onClick(View v) {
+                Log.i(TAG, "Turn off LED");
+                ledModule.stop(true);
+            }
+        });*/
+
+        assert accel_switch != null;
+        accel_switch.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
+                Log.i("Switch State=", "" + isChecked);
+                sampling = isChecked;
+                if (isChecked) {
+                    accelModule.configureAxisSampling()
+                            .setFullScaleRange(AccRange.AR_16G)
+                            .setOutputDataRate(OutputDataRate.ODR_100_HZ)
+                            .commit();
+                    gyroModule.configure()
+                            .setOutputDataRate(Bmi160Gyro.OutputDataRate.ODR_100_HZ)
+                            .setFullScaleRange(FullScaleRange.FSR_500)
+                            .commit();
+                    magModule.setPowerPrsest(PowerPreset.LOW_POWER);
+                    magModule.enableBFieldSampling();
+                    mcTempModule.routeData()
+                            .fromSource(tempSources.get(MetaWearRChannel.NRF_DIE)).stream("temp_stream")
+                            .commit().onComplete(new AsyncOperation.CompletionHandler<RouteManager>() {
+
+                        @Override
+                        public void success(RouteManager result) {
+                            result.subscribe("temp_stream", new RouteManager.MessageHandler() {
+                                @Override
+                                public void process(Message msg) {
+                                    Log.i("MainActivity", String.format("Ext thermistor: %.3fC",
+                                            msg.getData(Float.class)));
+                                    temperature = "" + msg.getData(Float.class);
+                                    payload.setIMU1Temp(temperature);
+                                }
+                            });
+
+                            // Read temperature from the NRF soc chip
+                            mcTempModule.readTemperature(tempSources.get(MetaWearRChannel.NRF_DIE));
+                        }
+                    });
+
+                   magModule.routeData().fromBField().stream("mag_stream").commit()
+                            .onComplete(new AsyncOperation.CompletionHandler<RouteManager>() {
+                                            @Override
+                                            public void success(RouteManager result) {
+                                                result.subscribe("mag_stream", new RouteManager.MessageHandler() {
+                                                    @Override
+                                                    public void process(Message msg) {
+                                                        final CartesianFloat bField = msg.getData(CartesianFloat.class);
+
+                                                        Log.i("MainActivity", bField.toString());
+                                                        mag = bField.x() + ", " + bField.y() +", " + bField.z();
+                                                        payload.setIMU1MAG(mag);
+                                                    }
+                                                });
+                                                magModule.start();
+                                            }
+                            });
+                    AsyncOperation<RouteManager> routeManagerResultAccel = accelModule.routeData().fromAxes().stream(STREAM_KEY).commit();
+                    AsyncOperation<RouteManager> routeManagerResultGyro = gyroModule.routeData().fromAxes().stream(GYRO_STREAM_KEY).commit();
+                    routeManagerResultAccel.onComplete(new AsyncOperation.CompletionHandler<RouteManager>() {
+                        @Override
+                        public void success(RouteManager result) {
+                            result.subscribe(STREAM_KEY, new RouteManager.MessageHandler() {
+                                @Override
+                                public void process(Message message) {
+                                    CartesianFloat axes = message.getData(CartesianFloat.class);
+                                    Log.i(TAG, axes.toString());
+                                    accel= axes.x() + ", " + axes.y() + ", " + axes.z();
+                                    payload.setIMU1Acc(accel);
+                                }
+                            });
+                        }
+                        @Override
+                        public void failure(Throwable error) {
+                            Log.e(TAG, "Error committing route", error);
+                        }
+                    });
+
+                    routeManagerResultGyro.onComplete(new AsyncOperation.CompletionHandler<RouteManager>() {
+                        @Override
+                        public void success(RouteManager result) {
+                            result.subscribe(GYRO_STREAM_KEY, new RouteManager.MessageHandler() {
+                                @Override
+                                public void process(Message msg) {
+                                    final CartesianFloat spinData = msg.getData(CartesianFloat.class);
+                                    Log.i(TAG, String.format("Gyroscope: %s", spinData.toString()));
+                                    gyro = spinData.x() + ", " + spinData.y() + ", " + spinData.z();
+                                    payload.setIMU1Gyro(gyro);
+                                }
+                            });
+                        }
+                    });
+                    accelModule.enableAxisSampling();
+                    accelModule.start();
+                    gyroModule.start();
+                } else {
+                    gyroModule.stop();
+                    accelModule.disableAxisSampling();
+                    accelModule.stop();
+                }
+            }
+        });
+
+        assert accel_switch2 != null;
+        accel_switch2.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
+                Log.i("Switch State 2=", "" + isChecked);
+                sampling2 = isChecked;
+                if (isChecked) {
+
+                    accelModule2.configureAxisSampling()
+                            .setFullScaleRange(AccRange.AR_16G)
+                            .setOutputDataRate(OutputDataRate.ODR_100_HZ)
+                            .commit();
+                    gyroModule2.configure()
+                            .setOutputDataRate(Bmi160Gyro.OutputDataRate.ODR_100_HZ)
+                            .setFullScaleRange(FullScaleRange.FSR_500)
+                            .commit();
+                    magModule2.setPowerPrsest(PowerPreset.LOW_POWER);
+                    magModule2.enableBFieldSampling();
+                    mcTempModule2.routeData()
+                            .fromSource(tempSources2.get(MetaWearRChannel.NRF_DIE)).stream("temp_stream2")
+                            .commit().onComplete(new AsyncOperation.CompletionHandler<RouteManager>() {
+
+                        @Override
+                        public void success(RouteManager result) {
+                            result.subscribe("temp_stream2", new RouteManager.MessageHandler() {
+                                @Override
+                                public void process(Message msg) {
+                                    Log.i(TAG, String.format("Ext thermistor: %.3fC",
+                                            msg.getData(Float.class)));
+                                    temperature2 = msg.getData(Float.class).toString();
+                                    payload.setIMU2Temp(temperature2);
+                                }
+                            });
+
+                            // Read temperature from the NRF soc chip
+                            mcTempModule2.readTemperature(tempSources2.get(MetaWearRChannel.NRF_DIE));
+                        }
+                    });
+
+                    magModule2.routeData().fromBField().stream("mag_stream2").commit()
+                            .onComplete(new AsyncOperation.CompletionHandler<RouteManager>() {
+                                @Override
+                                public void success(RouteManager result) {
+                                    result.subscribe("mag_stream2", new RouteManager.MessageHandler() {
+                                        @Override
+                                        public void process(Message msg) {
+                                            final CartesianFloat bField = msg.getData(CartesianFloat.class);
+
+                                            Log.i(TAG, bField.toString());
+                                            mag2 = bField.x() + ", " + bField.y() +", " + bField.z();
+                                            payload.setIMU2MAG(mag2);
+                                        }
+                                    });
+                                    magModule2.start();
+                                }
+                            });
+                    AsyncOperation<RouteManager> routeManagerResultAccel = accelModule2.routeData().fromAxes().stream("accel_stream2").commit();
+                    AsyncOperation<RouteManager> routeManagerResultGyro = gyroModule2.routeData().fromAxes().stream("gyro_stream2").commit();
+                    routeManagerResultAccel.onComplete(new AsyncOperation.CompletionHandler<RouteManager>() {
+                        @Override
+                        public void success(RouteManager result) {
+                            result.subscribe("accel_stream2", new RouteManager.MessageHandler() {
+                                @Override
+                                public void process(Message message) {
+                                    CartesianFloat axes = message.getData(CartesianFloat.class);
+                                    Log.i(TAG, axes.toString());
+                                    accel2= axes.x() + ", " + axes.y() + ", " + axes.z();
+                                    payload.setIMU2Acc(accel2);
+                                }
+                            });
+                        }
+                        @Override
+                        public void failure(Throwable error) {
+                            Log.e(TAG, "Error committing route", error);
+                        }
+                    });
+
+                    routeManagerResultGyro.onComplete(new AsyncOperation.CompletionHandler<RouteManager>() {
+                        @Override
+                        public void success(RouteManager result) {
+                            result.subscribe("gyro_stream2", new RouteManager.MessageHandler() {
+                                @Override
+                                public void process(Message msg) {
+                                    final CartesianFloat spinData = msg.getData(CartesianFloat.class);
+                                    Log.i(TAG, String.format("Gyroscope: %s", spinData.toString()));
+                                    gyro2 = spinData.x() + ", " + spinData.y() + ", " + spinData.z();
+                                    payload.setIMU2Gyro(gyro2);
+                                }
+                            });
+                        }
+                    });
+                    accelModule2.enableAxisSampling(); //You must enable axis sampling before you can start
+                    accelModule2.start();
+                    gyroModule2.start();
+                } else {
+                    gyroModule2.stop();
+                    accelModule2.disableAxisSampling(); //Likewise, you must first disable axis sampling before stopping
+                    accelModule2.stop();
+                }
             }
         });
 
@@ -337,6 +751,8 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
         // Typecast the binder to the service's LocalBinder class
         serviceBinder = (MetaWearBleService.LocalBinder) service;
         retrieveBoard();
+        retrieveBoard2();
+
     }
 
     @Override
