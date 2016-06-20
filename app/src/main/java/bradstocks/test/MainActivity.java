@@ -64,7 +64,9 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
     ToneGenerator tone;
     private MetaWearBleService.LocalBinder serviceBinder;
     private final String MW_MAC_ADDRESS= "D0:73:6E:F3:AA:12";
-    private final String MW_MAC_ADDRESS2= "C2:5D:6E:47:85:C2";
+    //private final String MW_MAC_ADDRESS2= "C2:5D:6E:47:85:C2";
+    private final String MW_MAC_ADDRESS2= "FE:8B:EF:C3:49:E5";
+
     private MetaWearBoard mwBoard;
     private MetaWearBoard mwBoard2;
     private Led ledModule;
@@ -92,7 +94,8 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
     List<Source> tempSources;
     List<Source> tempSources2;
     String GPIO;
-
+    int disconDetect;
+    int count;
 
 
     private final ConnectionStateHandler stateHandler= new ConnectionStateHandler() {
@@ -108,6 +111,7 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
                 magModule= mwBoard.getModule(Bmm150Magnetometer.class);
                 mcTempModule= mwBoard.getModule(MultiChannelTemperature.class);
                 tempSources= mcTempModule.getSources();
+                if(sampling) setListeners();
 
             } catch (UnsupportedModuleException e) {
                 e.printStackTrace();
@@ -116,11 +120,15 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
 
         @Override
         public void disconnected() {
+           // killListeners();
+            mwBoard.connect();
             Log.i(TAG, "Connected Lost");
         }
 
         @Override
         public void failure(int status, Throwable error) {
+           // killListeners();
+            mwBoard.connect();
             Log.e(TAG, "Error connecting", error);
         }
     };
@@ -138,6 +146,7 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
                 magModule2= mwBoard2.getModule(Bmm150Magnetometer.class);
                 mcTempModule2= mwBoard2.getModule(MultiChannelTemperature.class);
                 tempSources2= mcTempModule2.getSources();
+                if(sampling2) setListeners2();
 
             } catch (UnsupportedModuleException e) {
                 e.printStackTrace();
@@ -146,11 +155,15 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
 
         @Override
         public void disconnected() {
+            //killListeners2();
+            mwBoard2.connect();
             Log.i(TAG, "Connected Lost 2");
         }
 
         @Override
         public void failure(int status, Throwable error) {
+            //killListeners2();
+            mwBoard2.connect();
             Log.e(TAG, "Error connecting 2", error);
         }
     };
@@ -164,6 +177,7 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
         // Create a MetaWear board object for the Bluetooth Device
         mwBoard= serviceBinder.getMetaWearBoard(remoteDevice);
         mwBoard.setConnectionStateHandler(stateHandler);
+
 
     }
 
@@ -194,21 +208,6 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
                     public void run() {
                         if(running) {
                             try {
-                                if(counter>200){
-                                    counter = 0;
-                                }
-                                else if(counter > 99){
-                                    gpioModule.setDigitalOut(GPIO_PIN);
-                                    payload.setGPIO("1");
-                                    counter++;
-                                }
-                                else if(counter<100){
-                                    counter++;
-                                    gpioModule.clearDigitalOut(GPIO_PIN);
-                                    payload.setGPIO("0");
-
-                                }
-                                Log.i(TAG, "" + counter);
                                 payload.writeToFile();
                             } catch (IOException e) {
                                 e.printStackTrace();
@@ -269,9 +268,12 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
     float tempArr[];
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        count = 0;
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
         t= new Timer();
+
+        payload = new Payload("testData.csv" + count);
 
         tone = new ToneGenerator(AudioManager.STREAM_ALARM, 100);
         tempArr = new float[3];
@@ -286,7 +288,6 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
         context.bindService(new Intent(this, MetaWearBleService.class),
                 this, Context.BIND_AUTO_CREATE);
 
-        Log.i(TAG, "log test");
         CharSequence text = "Write is complete!";
         int duration = Toast.LENGTH_SHORT;
         toast = Toast.makeText(context, text, duration);
@@ -315,7 +316,6 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
         feedback = (TextView) findViewById(R.id.feedback);
         feedback.setVisibility(View.VISIBLE);
 
-        payload = new Payload("testData.csv");
 
         mSensorManager = (SensorManager) getSystemService(SENSOR_SERVICE);
         mSensorListener = new SensorEventListener() {
@@ -423,6 +423,8 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
                         tone.startTone(ToneGenerator.TONE_CDMA_ALERT_CALL_GUARD, 20);
                         pause();
                         running = false;
+                        count++;
+                        payload = new Payload("testData.csv" + count);
                     } catch (IOException e) {
                         e.printStackTrace();
                     }
@@ -432,6 +434,7 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
 
         start.setOnClickListener(new View.OnClickListener(){
             public void onClick(View v){
+
                 if(sampling && sampling2) {
                     if (!running) {
                         //t = new Timer();
@@ -509,98 +512,12 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
         accel_switch.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
             public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
                 Log.i("Switch State=", "" + isChecked);
+                if(!mwBoard.isConnected()) feedback.setText("Connection lost");
                 sampling = isChecked;
                 if (isChecked) {
-                    accelModule.configureAxisSampling()
-                            .setFullScaleRange(AccRange.AR_16G)
-                            .setOutputDataRate(OutputDataRate.ODR_100_HZ)
-                            .commit();
-                    gyroModule.configure()
-                            .setOutputDataRate(Bmi160Gyro.OutputDataRate.ODR_100_HZ)
-                            .setFullScaleRange(FullScaleRange.FSR_500)
-                            .commit();
-                    magModule.setPowerPrsest(PowerPreset.LOW_POWER);
-                    magModule.enableBFieldSampling();
-                    mcTempModule.routeData()
-                            .fromSource(tempSources.get(MetaWearRChannel.NRF_DIE)).stream("temp_stream")
-                            .commit().onComplete(new AsyncOperation.CompletionHandler<RouteManager>() {
-
-                        @Override
-                        public void success(RouteManager result) {
-                            result.subscribe("temp_stream", new RouteManager.MessageHandler() {
-                                @Override
-                                public void process(Message msg) {
-                                    Log.i("MainActivity", String.format("Ext thermistor: %.3fC",
-                                            msg.getData(Float.class)));
-                                    temperature = "" + msg.getData(Float.class);
-                                    payload.setIMU1Temp(temperature);
-                                }
-                            });
-
-                            // Read temperature from the NRF soc chip
-                            mcTempModule.readTemperature(tempSources.get(MetaWearRChannel.NRF_DIE));
-                        }
-                    });
-
-                   magModule.routeData().fromBField().stream("mag_stream").commit()
-                            .onComplete(new AsyncOperation.CompletionHandler<RouteManager>() {
-                                            @Override
-                                            public void success(RouteManager result) {
-                                                result.subscribe("mag_stream", new RouteManager.MessageHandler() {
-                                                    @Override
-                                                    public void process(Message msg) {
-                                                        final CartesianFloat bField = msg.getData(CartesianFloat.class);
-
-                                                        Log.i("MainActivity", bField.toString());
-                                                        mag = bField.x() + ", " + bField.y() +", " + bField.z();
-                                                        payload.setIMU1MAG(mag);
-                                                    }
-                                                });
-                                                magModule.start();
-                                            }
-                            });
-                    AsyncOperation<RouteManager> routeManagerResultAccel = accelModule.routeData().fromAxes().stream(STREAM_KEY).commit();
-                    AsyncOperation<RouteManager> routeManagerResultGyro = gyroModule.routeData().fromAxes().stream(GYRO_STREAM_KEY).commit();
-                    routeManagerResultAccel.onComplete(new AsyncOperation.CompletionHandler<RouteManager>() {
-                        @Override
-                        public void success(RouteManager result) {
-                            result.subscribe(STREAM_KEY, new RouteManager.MessageHandler() {
-                                @Override
-                                public void process(Message message) {
-                                    CartesianFloat axes = message.getData(CartesianFloat.class);
-                                    Log.i(TAG, axes.toString());
-                                    accel= axes.x() + ", " + axes.y() + ", " + axes.z();
-                                    payload.setIMU1Acc(accel);
-                                }
-                            });
-                        }
-                        @Override
-                        public void failure(Throwable error) {
-                            Log.e(TAG, "Error committing route", error);
-                        }
-                    });
-
-                    routeManagerResultGyro.onComplete(new AsyncOperation.CompletionHandler<RouteManager>() {
-                        @Override
-                        public void success(RouteManager result) {
-                            result.subscribe(GYRO_STREAM_KEY, new RouteManager.MessageHandler() {
-                                @Override
-                                public void process(Message msg) {
-                                    final CartesianFloat spinData = msg.getData(CartesianFloat.class);
-                                    Log.i(TAG, String.format("Gyroscope: %s", spinData.toString()));
-                                    gyro = spinData.x() + ", " + spinData.y() + ", " + spinData.z();
-                                    payload.setIMU1Gyro(gyro);
-                                }
-                            });
-                        }
-                    });
-                    accelModule.enableAxisSampling();
-                    accelModule.start();
-                    gyroModule.start();
+                    setListeners();
                 } else {
-                    gyroModule.stop();
-                    accelModule.disableAxisSampling();
-                    accelModule.stop();
+                    killListeners();
                 }
             }
         });
@@ -611,97 +528,10 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
                 Log.i("Switch State 2=", "" + isChecked);
                 sampling2 = isChecked;
                 if (isChecked) {
+                    setListeners2();
 
-                    accelModule2.configureAxisSampling()
-                            .setFullScaleRange(AccRange.AR_16G)
-                            .setOutputDataRate(OutputDataRate.ODR_100_HZ)
-                            .commit();
-                    gyroModule2.configure()
-                            .setOutputDataRate(Bmi160Gyro.OutputDataRate.ODR_100_HZ)
-                            .setFullScaleRange(FullScaleRange.FSR_500)
-                            .commit();
-                    magModule2.setPowerPrsest(PowerPreset.LOW_POWER);
-                    magModule2.enableBFieldSampling();
-                    mcTempModule2.routeData()
-                            .fromSource(tempSources2.get(MetaWearRChannel.NRF_DIE)).stream("temp_stream2")
-                            .commit().onComplete(new AsyncOperation.CompletionHandler<RouteManager>() {
-
-                        @Override
-                        public void success(RouteManager result) {
-                            result.subscribe("temp_stream2", new RouteManager.MessageHandler() {
-                                @Override
-                                public void process(Message msg) {
-                                    Log.i(TAG, String.format("Ext thermistor: %.3fC",
-                                            msg.getData(Float.class)));
-                                    temperature2 = msg.getData(Float.class).toString();
-                                    payload.setIMU2Temp(temperature2);
-                                }
-                            });
-
-                            // Read temperature from the NRF soc chip
-                            mcTempModule2.readTemperature(tempSources2.get(MetaWearRChannel.NRF_DIE));
-                        }
-                    });
-
-                    magModule2.routeData().fromBField().stream("mag_stream2").commit()
-                            .onComplete(new AsyncOperation.CompletionHandler<RouteManager>() {
-                                @Override
-                                public void success(RouteManager result) {
-                                    result.subscribe("mag_stream2", new RouteManager.MessageHandler() {
-                                        @Override
-                                        public void process(Message msg) {
-                                            final CartesianFloat bField = msg.getData(CartesianFloat.class);
-
-                                            Log.i(TAG, bField.toString());
-                                            mag2 = bField.x() + ", " + bField.y() +", " + bField.z();
-                                            payload.setIMU2MAG(mag2);
-                                        }
-                                    });
-                                    magModule2.start();
-                                }
-                            });
-                    AsyncOperation<RouteManager> routeManagerResultAccel = accelModule2.routeData().fromAxes().stream("accel_stream2").commit();
-                    AsyncOperation<RouteManager> routeManagerResultGyro = gyroModule2.routeData().fromAxes().stream("gyro_stream2").commit();
-                    routeManagerResultAccel.onComplete(new AsyncOperation.CompletionHandler<RouteManager>() {
-                        @Override
-                        public void success(RouteManager result) {
-                            result.subscribe("accel_stream2", new RouteManager.MessageHandler() {
-                                @Override
-                                public void process(Message message) {
-                                    CartesianFloat axes = message.getData(CartesianFloat.class);
-                                    Log.i(TAG, axes.toString());
-                                    accel2= axes.x() + ", " + axes.y() + ", " + axes.z();
-                                    payload.setIMU2Acc(accel2);
-                                }
-                            });
-                        }
-                        @Override
-                        public void failure(Throwable error) {
-                            Log.e(TAG, "Error committing route", error);
-                        }
-                    });
-
-                    routeManagerResultGyro.onComplete(new AsyncOperation.CompletionHandler<RouteManager>() {
-                        @Override
-                        public void success(RouteManager result) {
-                            result.subscribe("gyro_stream2", new RouteManager.MessageHandler() {
-                                @Override
-                                public void process(Message msg) {
-                                    final CartesianFloat spinData = msg.getData(CartesianFloat.class);
-                                    Log.i(TAG, String.format("Gyroscope: %s", spinData.toString()));
-                                    gyro2 = spinData.x() + ", " + spinData.y() + ", " + spinData.z();
-                                    payload.setIMU2Gyro(gyro2);
-                                }
-                            });
-                        }
-                    });
-                    accelModule2.enableAxisSampling(); //You must enable axis sampling before you can start
-                    accelModule2.start();
-                    gyroModule2.start();
                 } else {
-                    gyroModule2.stop();
-                    accelModule2.disableAxisSampling(); //Likewise, you must first disable axis sampling before stopping
-                    accelModule2.stop();
+                    killListeners2();
                 }
             }
         });
@@ -753,6 +583,199 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
         retrieveBoard();
         retrieveBoard2();
 
+    }
+
+    public void setListeners(){
+        accelModule.configureAxisSampling()
+                .setFullScaleRange(AccRange.AR_16G)
+                .setOutputDataRate(OutputDataRate.ODR_25_HZ)
+                .commit();
+        gyroModule.configure()
+                .setOutputDataRate(Bmi160Gyro.OutputDataRate.ODR_25_HZ)
+                .setFullScaleRange(FullScaleRange.FSR_500)
+                .commit();
+        magModule.setPowerPrsest(PowerPreset.LOW_POWER);
+        magModule.enableBFieldSampling();
+        mcTempModule.routeData()
+                .fromSource(tempSources.get(MetaWearRChannel.NRF_DIE)).stream("temp_stream")
+                .commit().onComplete(new AsyncOperation.CompletionHandler<RouteManager>() {
+
+            @Override
+            public void success(RouteManager result) {
+                result.subscribe("temp_stream", new RouteManager.MessageHandler() {
+                    @Override
+                    public void process(Message msg) {
+                       // Log.i("MainActivity", String.format("Ext thermistor: %.3fC",
+                        //        msg.getData(Float.class)));
+                        temperature = "" + msg.getData(Float.class);
+                        payload.setIMU1Temp(temperature);
+                    }
+                });
+
+                // Read temperature from the NRF soc chip
+                mcTempModule.readTemperature(tempSources.get(MetaWearRChannel.NRF_DIE));
+            }
+        });
+
+        magModule.routeData().fromBField().stream("mag_stream").commit()
+                .onComplete(new AsyncOperation.CompletionHandler<RouteManager>() {
+                    @Override
+                    public void success(RouteManager result) {
+                        result.subscribe("mag_stream", new RouteManager.MessageHandler() {
+                            @Override
+                            public void process(Message msg) {
+                                final CartesianFloat bField = msg.getData(CartesianFloat.class);
+
+                                //Log.i("MainActivity", bField.toString());
+                                mag = bField.x() + ", " + bField.y() +", " + bField.z();
+                                payload.setIMU1MAG(mag);
+                            }
+                        });
+                        magModule.start();
+                    }
+                });
+        AsyncOperation<RouteManager> routeManagerResultAccel = accelModule.routeData().fromAxes().stream(STREAM_KEY).commit();
+        AsyncOperation<RouteManager> routeManagerResultGyro = gyroModule.routeData().fromAxes().stream(GYRO_STREAM_KEY).commit();
+        routeManagerResultAccel.onComplete(new AsyncOperation.CompletionHandler<RouteManager>() {
+            @Override
+            public void success(RouteManager result) {
+                result.subscribe(STREAM_KEY, new RouteManager.MessageHandler() {
+                    @Override
+                    public void process(Message message) {
+                        CartesianFloat axes = message.getData(CartesianFloat.class);
+                       // Log.i(TAG, axes.toString());
+                        accel= axes.x() + ", " + axes.y() + ", " + axes.z();
+                        payload.setIMU1Acc(accel);
+                        disconDetect = 0;
+                    }
+                });
+            }
+            @Override
+            public void failure(Throwable error) {
+                Log.e(TAG, "Error committing route", error);
+            }
+        });
+
+        routeManagerResultGyro.onComplete(new AsyncOperation.CompletionHandler<RouteManager>() {
+            @Override
+            public void success(RouteManager result) {
+                result.subscribe(GYRO_STREAM_KEY, new RouteManager.MessageHandler() {
+                    @Override
+                    public void process(Message msg) {
+                        final CartesianFloat spinData = msg.getData(CartesianFloat.class);
+                        //Log.i(TAG, String.format("Gyroscope: %s", spinData.toString()));
+                        gyro = spinData.x() + ", " + spinData.y() + ", " + spinData.z();
+                        payload.setIMU1Gyro(gyro);
+                    }
+                });
+            }
+        });
+        accelModule.enableAxisSampling();
+        accelModule.start();
+        gyroModule.start();
+    }
+
+    public void killListeners(){
+        gyroModule.stop();
+        accelModule.disableAxisSampling();
+        accelModule.stop();
+        magModule.stop();
+    }
+
+    public void setListeners2(){
+        accelModule2.configureAxisSampling()
+                .setFullScaleRange(AccRange.AR_16G)
+                .setOutputDataRate(OutputDataRate.ODR_100_HZ)
+                .commit();
+        gyroModule2.configure()
+                .setOutputDataRate(Bmi160Gyro.OutputDataRate.ODR_100_HZ)
+                .setFullScaleRange(FullScaleRange.FSR_500)
+                .commit();
+        magModule2.setPowerPrsest(PowerPreset.LOW_POWER);
+        magModule2.enableBFieldSampling();
+        mcTempModule2.routeData()
+                .fromSource(tempSources2.get(MetaWearRChannel.NRF_DIE)).stream("temp_stream2")
+                .commit().onComplete(new AsyncOperation.CompletionHandler<RouteManager>() {
+
+            @Override
+            public void success(RouteManager result) {
+                result.subscribe("temp_stream2", new RouteManager.MessageHandler() {
+                    @Override
+                    public void process(Message msg) {
+                       // Log.i(TAG, String.format("Ext thermistor: %.3fC",
+                        //        msg.getData(Float.class)));
+                        temperature2 = msg.getData(Float.class).toString();
+                        payload.setIMU2Temp(temperature2);
+                    }
+                });
+
+                // Read temperature from the NRF soc chip
+                mcTempModule2.readTemperature(tempSources2.get(MetaWearRChannel.NRF_DIE));
+            }
+        });
+
+        magModule2.routeData().fromBField().stream("mag_stream2").commit()
+                .onComplete(new AsyncOperation.CompletionHandler<RouteManager>() {
+                    @Override
+                    public void success(RouteManager result) {
+                        result.subscribe("mag_stream2", new RouteManager.MessageHandler() {
+                            @Override
+                            public void process(Message msg) {
+                                final CartesianFloat bField = msg.getData(CartesianFloat.class);
+
+                                //Log.i(TAG, bField.toString());
+                                mag2 = bField.x() + ", " + bField.y() +", " + bField.z();
+                                payload.setIMU2MAG(mag2);
+                            }
+                        });
+                        magModule2.start();
+                    }
+                });
+        AsyncOperation<RouteManager> routeManagerResultAccel = accelModule2.routeData().fromAxes().stream("accel_stream2").commit();
+        AsyncOperation<RouteManager> routeManagerResultGyro = gyroModule2.routeData().fromAxes().stream("gyro_stream2").commit();
+        routeManagerResultAccel.onComplete(new AsyncOperation.CompletionHandler<RouteManager>() {
+            @Override
+            public void success(RouteManager result) {
+                result.subscribe("accel_stream2", new RouteManager.MessageHandler() {
+                    @Override
+                    public void process(Message message) {
+                        CartesianFloat axes = message.getData(CartesianFloat.class);
+                        //Log.i(TAG, axes.toString());
+                        accel2= axes.x() + ", " + axes.y() + ", " + axes.z();
+                        payload.setIMU2Acc(accel2);
+                    }
+                });
+            }
+            @Override
+            public void failure(Throwable error) {
+                Log.e(TAG, "Error committing route", error);
+            }
+        });
+
+        routeManagerResultGyro.onComplete(new AsyncOperation.CompletionHandler<RouteManager>() {
+            @Override
+            public void success(RouteManager result) {
+                result.subscribe("gyro_stream2", new RouteManager.MessageHandler() {
+                    @Override
+                    public void process(Message msg) {
+                        final CartesianFloat spinData = msg.getData(CartesianFloat.class);
+                        //Log.i(TAG, String.format("Gyroscope: %s", spinData.toString()));
+                        gyro2 = spinData.x() + ", " + spinData.y() + ", " + spinData.z();
+                        payload.setIMU2Gyro(gyro2);
+                    }
+                });
+            }
+        });
+        accelModule2.enableAxisSampling(); //You must enable axis sampling before you can start
+        accelModule2.start();
+        gyroModule2.start();
+    }
+
+    public void killListeners2(){
+        gyroModule2.stop();
+        accelModule2.disableAxisSampling(); //Likewise, you must first disable axis sampling before stopping
+        accelModule2.stop();
+        magModule2.stop();
     }
 
     @Override
