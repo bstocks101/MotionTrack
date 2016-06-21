@@ -72,7 +72,10 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
     private MetaWearBoard mwBoard2;
     private Led ledModule;
     private Led ledModule2;
-    private static final String TAG = "MetaWear";
+    private static final String TAG = "Feedback";
+    private static final String TAG2 = "Stream1";
+    private static final String TAG3 = "Stream2";
+    private static final String TAG4 = "GPS";
     private Button connect;
     private Button led1_tog;
     private Button led2_tog;
@@ -95,14 +98,14 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
     List<Source> tempSources;
     List<Source> tempSources2;
     String GPIO;
-    int disconDetect;
+    int tempCount;
     int count;
 
 
     private final ConnectionStateHandler stateHandler= new ConnectionStateHandler() {
         @Override
         public void connected() {
-            Log.i(TAG, "Connected");
+            Log.i(TAG, "Device 1 Connected");
             connected = true;
             try {
                 ledModule = mwBoard.getModule(Led.class);
@@ -123,21 +126,21 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
         public void disconnected() {
            // killListeners();
             mwBoard.connect();
-            Log.i(TAG, "Connected Lost");
+            Log.i(TAG, "Connection 1 lost");
         }
 
         @Override
         public void failure(int status, Throwable error) {
            // killListeners();
             mwBoard.connect();
-            Log.e(TAG, "Error connecting", error);
+            Log.e(TAG, "Error connecting 1... retrying", error);
         }
     };
 
     private final ConnectionStateHandler stateHandler2= new ConnectionStateHandler() {
         @Override
         public void connected() {
-            Log.i(TAG, "Connected 2");
+            Log.i(TAG, "Device 2 connected");
             connected2 = true;
             try {
                 ledModule2 = mwBoard2.getModule(Led.class);
@@ -158,14 +161,14 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
         public void disconnected() {
             //killListeners2();
             mwBoard2.connect();
-            Log.i(TAG, "Connected Lost 2");
+            Log.i(TAG, "Connection 2 lost");
         }
 
         @Override
         public void failure(int status, Throwable error) {
             //killListeners2();
             mwBoard2.connect();
-            Log.e(TAG, "Error connecting 2", error);
+            Log.e(TAG, "Error connecting 2... retrying", error);
         }
     };
 
@@ -196,18 +199,26 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
 
 
     public void pause() {
+        Log.i(TAG, "Logging stopped");
         this.t.cancel();
         this.t = new Timer();
     }
 
     public void resume() {
-        //this.t = new Timer();
+        Log.i(TAG, "Logging started");
         this.t.schedule(new TimerTask(){
             public void run(){
                 writeHandler.post(new Runnable() {
                     @Override
                     public void run() {
                         if(running) {
+                            tempCount++;
+                            if(tempCount > 10) {
+                                mcTempModule.readTemperature(tempSources.get(MetaWearRChannel.NRF_DIE));
+                                mcTempModule2.readTemperature(tempSources.get(MetaWearRChannel.NRF_DIE));
+
+                                tempCount = 0;
+                            }
                             try {
                                 payload.writeToFile();
                             } catch (IOException e) {
@@ -275,7 +286,7 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
         t= new Timer();
 
         payload = new Payload("testData" + count + ".csv");
-
+        Log.i(TAG, "Application started");
         tone = new ToneGenerator(AudioManager.STREAM_ALARM, 100);
         tempArr = new float[3];
         running = false;
@@ -379,11 +390,14 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
                 lon = location.getLongitude();
                 alt = location.getAltitude();
                 bear = location.getBearing();
+                Log.i(TAG4, "GPS: (" + lat + ", " + lon + ", " + location.getSpeed() + ", " + bear + ")");
+
                 payload.setLat(lat);
                 payload.setLon(lon);
                 payload.setGPSSpeed(location.getSpeed());
                 payload.setBearGPS(bear);
                 onBoardStatus.setText("All sensors ready");
+                Log.i(TAG, "GPS connected");
                 //tvGPS.setText("GPS:\nlat: " + lat + "\nlong: " + lon + "\nalt: " + alt + "\nbear: " + bear);
             }
 
@@ -397,23 +411,6 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
             }
         };
 
-       /* writeTask = new TimerTask(){
-            public void run(){
-                writeHandler.post(new Runnable() {
-                    @Override
-                    public void run() {
-                        if(running) {
-                            try {
-                                payload.writeToFile();
-                            } catch (IOException e) {
-                                e.printStackTrace();
-                            }
-                        }
-                    }
-                });
-            }
-        };*/
-
 
         stop.setOnClickListener(new View.OnClickListener(){
             public void onClick(View v) {
@@ -422,6 +419,7 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
                         payload.endFile();
                         toast.show();
                         tone.startTone(ToneGenerator.TONE_CDMA_ALERT_CALL_GUARD, 20);
+                        Log.i(TAG, "Write is complete to file testdata" + count +".csv");
                         pause();
                         running = false;
                         count++;
@@ -512,7 +510,7 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
         assert accel_switch != null;
         accel_switch.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
             public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
-                Log.i("Switch State=", "" + isChecked);
+                Log.i(TAG, "Stream 1 = " + isChecked);
                 if(!mwBoard.isConnected()) feedback.setText("Connection lost");
                 sampling = isChecked;
                 if (isChecked) {
@@ -526,7 +524,7 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
         assert accel_switch2 != null;
         accel_switch2.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
             public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
-                Log.i("Switch State 2=", "" + isChecked);
+                Log.i(TAG, "Stream 2 = " + isChecked);
                 sampling2 = isChecked;
                 if (isChecked) {
                     setListeners2();
@@ -606,8 +604,8 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
                 result.subscribe("temp_stream", new RouteManager.MessageHandler() {
                     @Override
                     public void process(Message msg) {
-                       // Log.i("MainActivity", String.format("Ext thermistor: %.3fC",
-                        //        msg.getData(Float.class)));
+                       Log.i(TAG2, String.format("Temperature: %.3fC",
+                                msg.getData(Float.class)));
                         temperature = "" + msg.getData(Float.class);
                         payload.setIMU1Temp(temperature);
                     }
@@ -627,12 +625,11 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
                             public void process(Message msg) {
                                 final CartesianFloat bField = msg.getData(CartesianFloat.class);
 
-                                //Log.i("MainActivity", bField.toString());
+                                Log.i(TAG2, "Mag1: " + bField.toString());
                                 mag = bField.x() + ", " + bField.y() +", " + bField.z();
                                 payload.setIMU1MAG(mag);
                             }
                         });
-                        magModule.start();
                     }
                 });
         AsyncOperation<RouteManager> routeManagerResultAccel = accelModule.routeData().fromAxes().stream(STREAM_KEY).commit();
@@ -644,10 +641,9 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
                     @Override
                     public void process(Message message) {
                         CartesianFloat axes = message.getData(CartesianFloat.class);
-                       // Log.i(TAG, axes.toString());
+                        Log.i(TAG2, "Acc1: " + axes.toString());
                         accel= axes.x() + ", " + axes.y() + ", " + axes.z();
                         payload.setIMU1Acc(accel);
-                        disconDetect = 0;
                     }
                 });
             }
@@ -664,7 +660,7 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
                     @Override
                     public void process(Message msg) {
                         final CartesianFloat spinData = msg.getData(CartesianFloat.class);
-                        //Log.i(TAG, String.format("Gyroscope: %s", spinData.toString()));
+                        Log.i(TAG2, "Gyro1: " + spinData.toString());
                         gyro = spinData.x() + ", " + spinData.y() + ", " + spinData.z();
                         payload.setIMU1Gyro(gyro);
                     }
@@ -674,6 +670,8 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
         accelModule.enableAxisSampling();
         accelModule.start();
         gyroModule.start();
+        magModule.start();
+
     }
 
     public void killListeners(){
@@ -703,8 +701,8 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
                 result.subscribe("temp_stream2", new RouteManager.MessageHandler() {
                     @Override
                     public void process(Message msg) {
-                       // Log.i(TAG, String.format("Ext thermistor: %.3fC",
-                        //        msg.getData(Float.class)));
+                        Log.i(TAG3, String.format("Temp2: %.3fC",
+                               msg.getData(Float.class)));
                         temperature2 = msg.getData(Float.class).toString();
                         payload.setIMU2Temp(temperature2);
                     }
@@ -724,12 +722,11 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
                             public void process(Message msg) {
                                 final CartesianFloat bField = msg.getData(CartesianFloat.class);
 
-                                //Log.i(TAG, bField.toString());
+                                Log.i(TAG3, "Mag2: " + bField.toString());
                                 mag2 = bField.x() + ", " + bField.y() +", " + bField.z();
                                 payload.setIMU2MAG(mag2);
                             }
                         });
-                        magModule2.start();
                     }
                 });
         AsyncOperation<RouteManager> routeManagerResultAccel = accelModule2.routeData().fromAxes().stream("accel_stream2").commit();
@@ -741,7 +738,7 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
                     @Override
                     public void process(Message message) {
                         CartesianFloat axes = message.getData(CartesianFloat.class);
-                        //Log.i(TAG, axes.toString());
+                        Log.i(TAG3, "Accel2: " + axes.toString());
                         accel2= axes.x() + ", " + axes.y() + ", " + axes.z();
                         payload.setIMU2Acc(accel2);
                     }
@@ -760,7 +757,7 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
                     @Override
                     public void process(Message msg) {
                         final CartesianFloat spinData = msg.getData(CartesianFloat.class);
-                        //Log.i(TAG, String.format("Gyroscope: %s", spinData.toString()));
+                        Log.i(TAG3, "Gyro2: "+ spinData.toString());
                         gyro2 = spinData.x() + ", " + spinData.y() + ", " + spinData.z();
                         payload.setIMU2Gyro(gyro2);
                     }
@@ -770,6 +767,7 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
         accelModule2.enableAxisSampling(); //You must enable axis sampling before you can start
         accelModule2.start();
         gyroModule2.start();
+        magModule2.start();
     }
 
     public void killListeners2(){
