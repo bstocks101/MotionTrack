@@ -15,6 +15,7 @@ import android.hardware.SensorManager;
 import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
+import android.location.LocationProvider;
 import android.media.AudioManager;
 import android.media.ToneGenerator;
 import android.os.Handler;
@@ -273,7 +274,7 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
         setContentView(R.layout.activity_main);
         t= new Timer();
 
-        payload = new Payload("testData.csv" + count);
+        payload = new Payload("testData" + count + ".csv");
 
         tone = new ToneGenerator(AudioManager.STREAM_ALARM, 100);
         tempArr = new float[3];
@@ -424,7 +425,7 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
                         pause();
                         running = false;
                         count++;
-                        payload = new Payload("testData.csv" + count);
+                        payload = new Payload("testData" + count + ".csv");
                     } catch (IOException e) {
                         e.printStackTrace();
                     }
@@ -435,17 +436,17 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
         start.setOnClickListener(new View.OnClickListener(){
             public void onClick(View v){
 
-                if(sampling && sampling2) {
+                //if(sampling && sampling2) {
                     if (!running) {
                         //t = new Timer();
                         tone.startTone(ToneGenerator.TONE_CDMA_ALERT_CALL_GUARD, 20);
                         resume();
                         running = true;
                     }
-                }
-                else{
-                    feedback.setText("Open both streams before starting");
-                }
+               // }
+               // else{
+               //     feedback.setText("Open both streams before starting");
+               // }
             }
         });
 
@@ -550,7 +551,7 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
             // for ActivityCompat#requestPermissions for more details.
             return;
         }
-        locationManager.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 0, 0, locationListener);
+        locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 0, 0, locationListener); //or NETWORK_PROVIDER
         //Sensor temp;
         //List<Sensor> mList = mSensorManager.getSensorList(Sensor.TYPE_ALL);
         //mPress = mSensorManager.getDefaultSensor(Sensor.TYPE_PRESSURE);
@@ -685,10 +686,10 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
     public void setListeners2(){
         accelModule2.configureAxisSampling()
                 .setFullScaleRange(AccRange.AR_16G)
-                .setOutputDataRate(OutputDataRate.ODR_100_HZ)
+                .setOutputDataRate(OutputDataRate.ODR_25_HZ)
                 .commit();
         gyroModule2.configure()
-                .setOutputDataRate(Bmi160Gyro.OutputDataRate.ODR_100_HZ)
+                .setOutputDataRate(Bmi160Gyro.OutputDataRate.ODR_25_HZ)
                 .setFullScaleRange(FullScaleRange.FSR_500)
                 .commit();
         magModule2.setPowerPrsest(PowerPreset.LOW_POWER);
