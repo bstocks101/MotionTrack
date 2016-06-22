@@ -1,6 +1,7 @@
 package bradstocks.test;
 
 import android.Manifest;
+import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothManager;
 import android.content.ComponentName;
@@ -20,6 +21,7 @@ import android.media.AudioManager;
 import android.media.ToneGenerator;
 import android.os.Handler;
 import android.os.IBinder;
+import android.os.PowerManager;
 import android.renderscript.Float3;
 import android.support.v4.app.ActivityCompat;
 import android.support.v7.app.AppCompatActivity;
@@ -55,7 +57,15 @@ import com.mbientlab.metawear.module.Bmi160Accelerometer.AccRange;
 import com.mbientlab.metawear.module.Bmi160Accelerometer.OutputDataRate;
 
 
+import org.apache.http.HttpResponse;
+import org.apache.http.client.HttpClient;
+import org.apache.http.client.methods.HttpGet;
+import org.apache.http.impl.client.DefaultHttpClient;
+
+import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.util.List;
 import java.util.Timer;
 import java.util.TimerTask;
@@ -93,6 +103,7 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
     private static final float ACC_RANGE = 8.f, ACC_FREQ = 50.f;
     private static final String STREAM_KEY = "accel_stream";
     private static final String GYRO_STREAM_KEY = "gyro_stream";
+    BluetoothAdapter mBluetoothAdapter;
     final byte GPIO_PIN = 2;
     int counter;
     List<Source> tempSources;
@@ -100,7 +111,118 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
     String GPIO;
     int tempCount;
     int count;
+    Timer test;
+    String state = "";
+    String previousState = "";
+    TimerTask getTask = new TimerTask() {
+        @Override
+        public void run() {
+            try {
+                HttpResponse response = httpclient.execute(httpget);
+                if(response!=null) {
 
+
+                    InputStream inputStream = response.getEntity().getContent();
+                    state = convertStreamToString(inputStream);
+
+                    if(!state.equalsIgnoreCase(previousState)){
+
+                        Log.i(TAG, "State changed to: " + state);
+                        if(state.equalsIgnoreCase("1")){
+                            MainActivity.this.runOnUiThread(new Runnable() {
+                                @Override
+                                public void run() {
+                                    connect.callOnClick();
+                                }
+                            });
+                        }
+                       else if(state.equalsIgnoreCase("2")){
+                            MainActivity.this.runOnUiThread(new Runnable() {
+                                @Override
+                                public void run() {
+                                    accel_switch.setChecked(true);
+                                }
+                            });
+                        }
+                        else if(state.equalsIgnoreCase("3")){
+                            MainActivity.this.runOnUiThread(new Runnable() {
+                                @Override
+                                public void run() {
+                                    accel_switch2.setChecked(true);
+                                }
+                            });
+
+                        }
+                       else if(state.equalsIgnoreCase("4")){
+                            MainActivity.this.runOnUiThread(new Runnable() {
+                                @Override
+                                public void run() {
+                                    start.callOnClick();
+                                }
+                            });
+
+                        }
+                        else if(state.equalsIgnoreCase("5")){
+                            MainActivity.this.runOnUiThread(new Runnable() {
+                                @Override
+                                public void run() {
+                                    stop.callOnClick();
+                                }
+                            });
+
+                        }
+                        else if(state.equalsIgnoreCase("6")){
+                            MainActivity.this.runOnUiThread(new Runnable() {
+                                @Override
+                                public void run() {
+                                    accel_switch.setChecked(false);
+                                }
+                            });
+                        }
+                       else  if(state.equalsIgnoreCase("7")){
+                            MainActivity.this.runOnUiThread(new Runnable() {
+                                @Override
+                                public void run() {
+                                    accel_switch2.setChecked(false);
+                                }
+                            });
+                        }
+                        else if(state.equalsIgnoreCase("8")){
+                            MainActivity.this.runOnUiThread(new Runnable() {
+                                @Override
+                                public void run() {
+                                    led1_tog.callOnClick();
+                                }
+                            });
+                        }
+                        else if(state.equalsIgnoreCase("9")){
+                            MainActivity.this.runOnUiThread(new Runnable() {
+                                @Override
+                                public void run() {
+                                    led2_tog.callOnClick();
+                                }
+                            });
+                        }
+                        else if(state.equalsIgnoreCase("99")){
+                            MainActivity.this.runOnUiThread(new Runnable() {
+                                @Override
+                                public void run() {
+                                   // onStop();
+                                    finish();
+                                }
+                            });
+                        }
+                    }
+                    previousState = state;
+                }
+                else{
+                    Log.i(TAG, "Server not responding");
+                }
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+    };
 
     private final ConnectionStateHandler stateHandler= new ConnectionStateHandler() {
         @Override
@@ -125,7 +247,7 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
         @Override
         public void disconnected() {
            // killListeners();
-            mwBoard.connect();
+           // mwBoard.connect();
             Log.i(TAG, "Connection 1 lost");
         }
 
@@ -160,7 +282,7 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
         @Override
         public void disconnected() {
             //killListeners2();
-            mwBoard2.connect();
+            //mwBoard2.connect();
             Log.i(TAG, "Connection 2 lost");
         }
 
@@ -214,8 +336,8 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
                         if(running) {
                             tempCount++;
                             if(tempCount > 10) {
-                                mcTempModule.readTemperature(tempSources.get(MetaWearRChannel.NRF_DIE));
-                                mcTempModule2.readTemperature(tempSources.get(MetaWearRChannel.NRF_DIE));
+                                if(sampling)mcTempModule.readTemperature(tempSources.get(MetaWearRChannel.NRF_DIE));
+                                if(sampling2)mcTempModule2.readTemperature(tempSources.get(MetaWearRChannel.NRF_DIE));
 
                                 tempCount = 0;
                             }
@@ -278,15 +400,38 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
     boolean LED1;
     boolean LED2;
     float tempArr[];
+    int stage;
+    protected PowerManager.WakeLock mWakeLock;
+
+    Timer updateState;
+
+    HttpClient httpclient;
+    HttpGet httpget;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         count = 0;
+        stage = 0;
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
         t= new Timer();
+        updateState = new Timer();
+        final BluetoothManager mBluetoothManager = (BluetoothManager)getSystemService(Context.BLUETOOTH_SERVICE);
+        mBluetoothAdapter = mBluetoothManager.getAdapter();
+        if (!mBluetoothAdapter.isEnabled()) {
+            mBluetoothAdapter.enable();
+        }
+        Log.i(TAG, "Application started");
+        Log.i(TAG, "Bluetooth enabled");
+
+        httpclient = new DefaultHttpClient();
+        httpget = new HttpGet("http://192.168.43.102:8000/state.html");
+
+        final PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
+        this.mWakeLock = pm.newWakeLock(PowerManager.SCREEN_DIM_WAKE_LOCK, "My Tag");
+        this.mWakeLock.acquire();
 
         payload = new Payload("testData" + count + ".csv");
-        Log.i(TAG, "Application started");
         tone = new ToneGenerator(AudioManager.STREAM_ALARM, 100);
         tempArr = new float[3];
         running = false;
@@ -397,11 +542,12 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
                 payload.setGPSSpeed(location.getSpeed());
                 payload.setBearGPS(bear);
                 onBoardStatus.setText("All sensors ready");
-                Log.i(TAG, "GPS connected");
                 //tvGPS.setText("GPS:\nlat: " + lat + "\nlong: " + lon + "\nalt: " + alt + "\nbear: " + bear);
             }
 
             public void onStatusChanged(String provider, int status, Bundle extras) {
+                Log.i(TAG, "GPS connected");
+
             }
 
             public void onProviderEnabled(String provider) {
@@ -437,6 +583,7 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
                 //if(sampling && sampling2) {
                     if (!running) {
                         //t = new Timer();
+
                         tone.startTone(ToneGenerator.TONE_CDMA_ALERT_CALL_GUARD, 20);
                         resume();
                         running = true;
@@ -540,40 +687,94 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
         mSensorManager.registerListener(mSensorListener, mSensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE), 10000);
         mSensorManager.registerListener(mSensorListener, mSensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER), 10000);
         if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-            // TODO: Consider calling
-            //    ActivityCompat#requestPermissions
-            // here to request the missing permissions, and then overriding
-            //   public void onRequestPermissionsResult(int requestCode, String[] permissions,
-            //                                          int[] grantResults)
-            // to handle the case where the user grants the permission. See the documentation
-            // for ActivityCompat#requestPermissions for more details.
+
             return;
         }
         locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 0, 0, locationListener); //or NETWORK_PROVIDER
-        //Sensor temp;
-        //List<Sensor> mList = mSensorManager.getSensorList(Sensor.TYPE_ALL);
-        //mPress = mSensorManager.getDefaultSensor(Sensor.TYPE_PRESSURE);
+        test = new Timer();
+        this.test.schedule(getTask
 
-        /*
-        for (int i = 0; i < mList.size(); i++) {
-            tv1.setVisibility(View.VISIBLE);
-            if(mList.get(i).getType()==Sensor.TYPE_GYROSCOPE) {
-                tv1.append(mList.get(i));
+                   /*     switch (stage){
+                            case 0:
+                                connect.callOnClick();
+                                stage++;
+                                break;
+                            case 1:
+
+                                    accel_switch.setChecked(true);
+                                    //setListeners();
+
+                                    accel_switch2.setChecked(true);
+                                    //setListeners2();
+
+                                    stage++;
+                                break;
+
+                            case 2:
+
+                                start.callOnClick();
+                                stage++;
+
+                                break;
+                            default:
+
+                        }
+                    }
+                });
             }
-            tv1.append("\n" + mList.get(i).getName() + "\n" + mList.get(i).getVendor()
-                    + "\n" + mList.get(i).getVersion());
-        }*/
-        //tv1.setMovementMethod(new ScrollingMovementMethod());
+        }*/, 5000, 1000);
 
+        updateState.scheduleAtFixedRate(new TimerTask() {
+            @Override
+            public void run() {
+
+            }
+        }, 1500, 1000);
+
+    }
+
+
+    private String convertStreamToString(InputStream is) {
+        String line = "";
+        StringBuilder total = new StringBuilder();
+        BufferedReader rd = new BufferedReader(new InputStreamReader(is));
+        try {
+            while ((line = rd.readLine()) != null) {
+                total.append(line);
+            }
+        } catch (Exception e) {
+            Toast.makeText(this, "Stream Exception", Toast.LENGTH_SHORT).show();
+        }
+        return total.toString();
     }
 
     @Override
     public void onDestroy() {
+        mwBoard.disconnect();
+        mwBoard2.disconnect();
+        mBluetoothAdapter.disable();
+        if(running) stop.callOnClick();
+        Log.i(TAG, "App closing now");
+        //this.mWakeLock.release();
         super.onDestroy();
 
         // Unbind the service when the activity is destroyed
         getApplicationContext().unbindService(this);
     }
+
+    @Override
+    public void onStop(){
+        mwBoard.disconnect();
+        mwBoard2.disconnect();
+        mBluetoothAdapter.disable();
+        if(running) stop.callOnClick();
+        Log.i(TAG, "App closing now");
+        //this.mWakeLock.release();
+        super.onStop();
+        getApplicationContext().unbindService(this);
+
+    }
+
 
     @Override
     public void onServiceConnected(ComponentName name, IBinder service) {
@@ -780,18 +981,5 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
     @Override
     public void onServiceDisconnected(ComponentName componentName) { }
 
-
-
-/*    @Override
-    protected void onResume(){
-        super.onResume();
-        mSensorManager.registerListener(this, mPress, SensorManager.SENSOR_DELAY_NORMAL);
-    }
-
-    @Override
-    protected void onPause(){
-        super.onPause();
-        mSensorManager.unregisterListener(this);
-    }*/
 
 }
