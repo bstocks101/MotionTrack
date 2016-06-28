@@ -38,8 +38,10 @@ import com.mbientlab.metawear.MetaWearBoard;
 import android.util.Log;
 import static com.mbientlab.metawear.MetaWearBoard.ConnectionStateHandler;
 import com.mbientlab.metawear.UnsupportedModuleException;
+import com.mbientlab.metawear.data.CartesianShort;
 import com.mbientlab.metawear.module.Bma255Accelerometer;
 import com.mbientlab.metawear.module.Bmi160Accelerometer;
+import com.mbientlab.metawear.module.I2C;
 import com.mbientlab.metawear.module.Led;
 import com.mbientlab.metawear.module.Accelerometer;
 import android.widget.Switch;
@@ -51,6 +53,7 @@ import com.mbientlab.metawear.module.Bmi160Gyro.*;
 import com.mbientlab.metawear.module.Gpio;
 import com.mbientlab.metawear.module.Bmm150Magnetometer;
 import com.mbientlab.metawear.module.Bmm150Magnetometer.PowerPreset;
+import com.mbientlab.metawear.module.Logging;
 import com.mbientlab.metawear.module.MultiChannelTemperature;
 import com.mbientlab.metawear.module.MultiChannelTemperature.*;
 import com.mbientlab.metawear.module.Bmi160Accelerometer.AccRange;
@@ -77,9 +80,11 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
     private final String MW_MAC_ADDRESS= "D0:73:6E:F3:AA:12";
     //private final String MW_MAC_ADDRESS2= "C2:5D:6E:47:85:C2";
     private final String MW_MAC_ADDRESS2= "FE:8B:EF:C3:49:E5";
+    private final String MW_MAC_ADDRESS3= "C2:5D:6E:47:85:C2";
 
     private MetaWearBoard mwBoard;
     private MetaWearBoard mwBoard2;
+    private MetaWearBoard mwBoard3;
     private Led ledModule;
     private Led ledModule2;
     private static final String TAG = "Feedback";
@@ -93,13 +98,20 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
     private Switch accel_switch2;
     private Bmi160Accelerometer accelModule;
     private Bmi160Accelerometer accelModule2;
+    private Bmi160Accelerometer accelModule3;
+
     private Bmi160Gyro gyroModule;
     private Bmi160Gyro gyroModule2;
+    private Bmi160Gyro gyroModule3;
+    private Logging logMod;
     private Gpio gpioModule;
     Bmm150Magnetometer magModule;
     Bmm150Magnetometer magModule2;
+    Bmm150Magnetometer magModule3;
     MultiChannelTemperature mcTempModule;
     MultiChannelTemperature mcTempModule2;
+    MultiChannelTemperature mcTempModule3;
+    I2C i2cMod;
     private static final float ACC_RANGE = 8.f, ACC_FREQ = 50.f;
     private static final String STREAM_KEY = "accel_stream";
     private static final String GYRO_STREAM_KEY = "gyro_stream";
@@ -237,6 +249,7 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
                 magModule= mwBoard.getModule(Bmm150Magnetometer.class);
                 mcTempModule= mwBoard.getModule(MultiChannelTemperature.class);
                 tempSources= mcTempModule.getSources();
+                //logMod = mwBoard.getModule(Logging.class);
                 if(sampling) setListeners();
 
             } catch (UnsupportedModuleException e) {
@@ -294,6 +307,34 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
         }
     };
 
+    private final ConnectionStateHandler stateHandler3= new ConnectionStateHandler() {
+        @Override
+        public void connected() {
+            Log.i(TAG, "Device 3 Connected");
+            connected = true;
+            try {
+                accelModule3 = mwBoard3.getModule(Bmi160Accelerometer.class);
+
+            } catch (UnsupportedModuleException e) {
+                e.printStackTrace();
+            }
+        }
+
+        @Override
+        public void disconnected() {
+            // killListeners();
+            // mwBoard.connect();
+            Log.i(TAG, "Connection 3 lost");
+        }
+
+        @Override
+        public void failure(int status, Throwable error) {
+            // killListeners();
+            mwBoard3.connect();
+            Log.e(TAG, "Error connecting 3... retrying", error);
+        }
+    };
+
     public void retrieveBoard() {
         final BluetoothManager btManager=
                 (BluetoothManager) getSystemService(Context.BLUETOOTH_SERVICE);
@@ -316,6 +357,18 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
         // Create a MetaWear board object for the Bluetooth Device
         mwBoard2= serviceBinder.getMetaWearBoard(remoteDevice);
         mwBoard2.setConnectionStateHandler(stateHandler2);
+
+    }
+
+    public void retrieveBoard3() {
+        final BluetoothManager btManager=
+                (BluetoothManager) getSystemService(Context.BLUETOOTH_SERVICE);
+        final BluetoothDevice remoteDevice=
+                btManager.getAdapter().getRemoteDevice(MW_MAC_ADDRESS3);
+
+        // Create a MetaWear board object for the Bluetooth Device
+        mwBoard3= serviceBinder.getMetaWearBoard(remoteDevice);
+        mwBoard3.setConnectionStateHandler(stateHandler3);
 
     }
 
@@ -475,6 +528,13 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
 
 
         mSensorManager = (SensorManager) getSystemService(SENSOR_SERVICE);
+        Log.i(TAG, mSensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER).getVendor());
+        Log.i(TAG, mSensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER).getName());
+        Log.i(TAG,""+ mSensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER).getMaximumRange());
+        Log.i(TAG, mSensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE).getVendor());
+        Log.i(TAG, mSensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE).getName());
+        Log.i(TAG,""+ mSensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE).getMaximumRange());
+
         mSensorListener = new SensorEventListener() {
             @Override
             public final void onAccuracyChanged(Sensor sensor, int accuracy) {
@@ -494,13 +554,11 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
                 if (sensor.getType() == Sensor.TYPE_PRESSURE) {
                     temp = event.values[0];
                     payload.setPressure(temp);
-                    //tvPress.setText("Pressure:\n" + temp);
                 } else if (sensor.getType() == Sensor.TYPE_MAGNETIC_FIELD) {
                     temp = event.values[0];
                     payload.setxMag(temp);
                     payload.setyMag(event.values[1]);
                     payload.setzMag(event.values[2]);
-                    //tvMag.setText("Mag:\nx: " + temp +"\ny: " + event.values[1] + "\nz: " + event.values[2]);
                 } else if (sensor.getType() == Sensor.TYPE_ACCELEROMETER) {
                     temp3[0] = event.values[0];
                     temp3[1] = event.values[1];
@@ -508,7 +566,6 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
                     payload.setxAcc(temp3[0]);
                     payload.setyAcc(temp3[1]);
                     payload.setzAcc(temp3[2]);
-                    //tvAcc.setText("ACC:\nx: " + temp3[0] + "\ny: " + temp3[1] + "\nz: " + temp3[2]);
                 } else if (sensor.getType() == Sensor.TYPE_GYROSCOPE) {
                     temp3[0] = event.values[0];
                     temp3[1] = event.values[1];
@@ -516,14 +573,8 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
                     payload.setxGyro(temp3[0]);
                     payload.setyGyro(temp3[1]);
                     payload.setzGyro(temp3[2]);
-                    //tvGyro.setText("Gyro:\nx: " + temp3[0] + "\ny: " + temp3[1] + "\nz: " + temp3[2]);
                 }
-                /*else if (sensor.getType() == Sensor.TYPE_AMBIENT_TEMPERATURE) {
-                    temp = event.values[0];
-                    payload.setTemperature(temp);
-                    tvTemp.setText("Temp:\n" + temp);
-                } */else {
-                    //tvMag.setText("Sorry");
+                else {
                 }
 
             }
@@ -580,7 +631,6 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
         start.setOnClickListener(new View.OnClickListener(){
             public void onClick(View v){
 
-                //if(sampling && sampling2) {
                     if (!running) {
                         //t = new Timer();
 
@@ -588,10 +638,7 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
                         resume();
                         running = true;
                     }
-               // }
-               // else{
-               //     feedback.setText("Open both streams before starting");
-               // }
+
             }
         });
 
@@ -602,6 +649,7 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
                 sensorStaus.setText("Connecting");
                 mwBoard.connect();
                 mwBoard2.connect();
+                //mwBoard3.connect();
             }
         });
         led1_tog.setOnClickListener(new View.OnClickListener() {
@@ -628,42 +676,38 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
 
         led2_tog =(Button)findViewById(R.id.led_off);
         led2_tog.setOnClickListener(new View.OnClickListener() {
-                                       @Override
-                                       public void onClick(View v) {
-                                           if(!LED2){
-                                               Log.i(TAG, "Turn on LED2");
-                                               ledModule2.configureColorChannel(Led.ColorChannel.RED)
-                                                       .setRiseTime((short) 0).setPulseDuration((short) 1000)
-                                                       .setRepeatCount((byte) -1).setHighTime((short) 500)
-                                                       .setHighIntensity((byte) 16).setLowIntensity((byte) 16)
-                                                       .commit();
-                                               ledModule2.play(true);
-                                               LED2 = true;
-                                           }
-                                           else{
-                                               Log.i(TAG, "Turn off LED2");
-                                               ledModule2.stop(true);
-                                               LED2 = false;
-                                           }
-                                       }
-                                   });
-            /* @Override
+            @Override
             public void onClick(View v) {
-                Log.i(TAG, "Turn off LED");
-                ledModule.stop(true);
+                if(!LED2){
+                    Log.i(TAG, "Turn on LED2");
+                    ledModule2.configureColorChannel(Led.ColorChannel.RED)
+                            .setRiseTime((short) 0).setPulseDuration((short) 1000)
+                            .setRepeatCount((byte) -1).setHighTime((short) 500)
+                            .setHighIntensity((byte) 16).setLowIntensity((byte) 16)
+                            .commit();
+                    ledModule2.play(true);
+                    LED2 = true;
+                }
+                else{
+                    Log.i(TAG, "Turn off LED2");
+                    ledModule2.stop(true);
+                    LED2 = false;
+                }
             }
-        });*/
+        });
 
         assert accel_switch != null;
         accel_switch.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
             public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
                 Log.i(TAG, "Stream 1 = " + isChecked);
                 if(!mwBoard.isConnected()) feedback.setText("Connection lost");
-                sampling = isChecked;
-                if (isChecked) {
-                    setListeners();
-                } else {
-                    killListeners();
+                else {
+                    sampling = isChecked;
+                    if (isChecked) {
+                        setListeners();
+                    } else {
+                        killListeners();
+                    }
                 }
             }
         });
@@ -672,12 +716,15 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
         accel_switch2.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
             public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
                 Log.i(TAG, "Stream 2 = " + isChecked);
-                sampling2 = isChecked;
-                if (isChecked) {
-                    setListeners2();
+                if(!mwBoard.isConnected()) feedback.setText("Connection lost");
+                else {
+                    sampling2 = isChecked;
+                    if (isChecked) {
+                        setListeners2();
 
-                } else {
-                    killListeners2();
+                    } else {
+                        killListeners2();
+                    }
                 }
             }
         });
@@ -692,37 +739,7 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
         }
         locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 0, 0, locationListener); //or NETWORK_PROVIDER
         test = new Timer();
-        this.test.schedule(getTask
-
-                   /*     switch (stage){
-                            case 0:
-                                connect.callOnClick();
-                                stage++;
-                                break;
-                            case 1:
-
-                                    accel_switch.setChecked(true);
-                                    //setListeners();
-
-                                    accel_switch2.setChecked(true);
-                                    //setListeners2();
-
-                                    stage++;
-                                break;
-
-                            case 2:
-
-                                start.callOnClick();
-                                stage++;
-
-                                break;
-                            default:
-
-                        }
-                    }
-                });
-            }
-        }*/, 5000, 1000);
+        this.test.schedule(getTask, 5000, 1000);
 
         updateState.scheduleAtFixedRate(new TimerTask() {
             @Override
@@ -766,7 +783,7 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
     public void onStop(){
         mwBoard.disconnect();
         mwBoard2.disconnect();
-        mBluetoothAdapter.disable();
+        //mBluetoothAdapter.disable();
         if(running) stop.callOnClick();
         Log.i(TAG, "App closing now");
         //this.mWakeLock.release();
@@ -782,14 +799,40 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
         serviceBinder = (MetaWearBleService.LocalBinder) service;
         retrieveBoard();
         retrieveBoard2();
+        //retrieveBoard3();
 
     }
 
     public void setListeners(){
+        /*accelModule3.configureAxisSampling()
+                .setFullScaleRange(AccRange.AR_16G)
+                .setOutputDataRate(OutputDataRate.ODR_100_HZ)
+                .commit();
+        AsyncOperation<RouteManager> routeManagerResultAccel3 = accelModule3.routeData().fromAxes().stream("Test_stream").commit();
+        routeManagerResultAccel3.onComplete(new AsyncOperation.CompletionHandler<RouteManager>() {
+            @Override
+            public void success(RouteManager result) {
+                result.subscribe("Test_stream", new RouteManager.MessageHandler() {
+                    @Override
+                    public void process(Message message) {
+                        CartesianFloat axes = message.getData(CartesianFloat.class);
+                        Log.i(TAG2, "Acc2: " + axes.toString());
+                        accel= axes.x() + ", " + axes.y() + ", " + axes.z();
+                        payload.setIMU1Acc(accel);
+                    }
+                });
+            }
+            @Override
+            public void failure(Throwable error) {
+                Log.e(TAG, "Error committing route", error);
+            }
+        });*/
+
         accelModule.configureAxisSampling()
                 .setFullScaleRange(AccRange.AR_16G)
                 .setOutputDataRate(OutputDataRate.ODR_25_HZ)
                 .commit();
+
         gyroModule.configure()
                 .setOutputDataRate(Bmi160Gyro.OutputDataRate.ODR_25_HZ)
                 .setFullScaleRange(FullScaleRange.FSR_500)
@@ -837,7 +880,8 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
         AsyncOperation<RouteManager> routeManagerResultGyro = gyroModule.routeData().fromAxes().stream(GYRO_STREAM_KEY).commit();
         routeManagerResultAccel.onComplete(new AsyncOperation.CompletionHandler<RouteManager>() {
             @Override
-            public void success(RouteManager result) {
+
+            public void success(final RouteManager result) {
                 result.subscribe(STREAM_KEY, new RouteManager.MessageHandler() {
                     @Override
                     public void process(Message message) {
@@ -847,6 +891,13 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
                         payload.setIMU1Acc(accel);
                     }
                 });
+                /*result.setLogMessageHandler("ACC_log", new RouteManager.MessageHandler(){
+                    @Override
+                    public void process(Message msg){
+                        final CartesianShort axisData = msg.getData(CartesianShort.class);
+                        Log.i(TAG2, String.format("Log: %s", axisData.toString()));
+                    }
+                });*/
             }
             @Override
             public void failure(Throwable error) {
@@ -868,7 +919,10 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
                 });
             }
         });
+        //logMod.startLogging();
         accelModule.enableAxisSampling();
+//        accelModule3.enableAxisSampling();
+//        accelModule3.start();
         accelModule.start();
         gyroModule.start();
         magModule.start();
@@ -880,6 +934,15 @@ public class MainActivity extends AppCompatActivity implements ServiceConnection
         accelModule.disableAxisSampling();
         accelModule.stop();
         magModule.stop();
+        //logMod.stopLogging();
+        /*logMod.downloadLog(0.05f, new Logging.DownloadHandler() {
+            @Override
+            public void onProgressUpdate(int nEntriesLeft, int totalEntries) {
+                Log.i(TAG, String.format("Progress= %d / %d", nEntriesLeft,
+                        totalEntries));
+            }
+        });
+        Log.i(TAG, "Log size: " + logMod.getLogCapacity());*/
     }
 
     public void setListeners2(){
