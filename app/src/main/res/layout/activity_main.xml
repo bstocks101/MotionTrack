@@ -39,8 +39,8 @@
     <Button
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Connect"
-        android:id="@+id/connect"
+        android:text="Connect 3"
+        android:id="@+id/connect3"
         android:layout_below="@+id/button2"
         android:layout_alignEnd="@+id/button2" />
 
@@ -57,8 +57,8 @@
         android:layout_height="wrap_content"
         android:text="LED1"
         android:id="@+id/led_on"
-        android:layout_below="@+id/connect"
-        android:layout_alignStart="@+id/connect" />
+        android:layout_below="@+id/connect3"
+        android:layout_alignStart="@+id/connect3" />
 
     <Button
         android:layout_width="wrap_content"
@@ -82,7 +82,7 @@
         android:layout_height="wrap_content"
         android:text="Sample feed 1"
         android:id="@+id/tv_accel"
-        android:layout_below="@+id/accel_switch2"
+        android:layout_alignTop="@+id/tv_accel2"
         android:layout_alignParentStart="true" />
 
     <Switch
@@ -99,6 +99,7 @@
         android:layout_height="wrap_content"
         android:text="Sample feed 2"
         android:id="@+id/tv_accel2"
+        android:layout_marginTop="42dp"
         android:layout_below="@+id/accel_switch2"
         android:layout_toStartOf="@+id/led_off" />
 
@@ -110,5 +111,30 @@
         android:layout_alignParentBottom="true"
         android:layout_alignParentStart="true"
         android:layout_marginBottom="54dp" />
+
+    <Switch
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Initiate feed 3"
+        android:id="@+id/accel_switch3"
+        android:checked="false"
+        android:layout_below="@+id/accel_switch2"
+        android:layout_alignParentEnd="true" />
+
+    <Button
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Connect 2"
+        android:id="@+id/connect2"
+        android:layout_alignTop="@+id/connect3"
+        android:layout_toStartOf="@+id/accel_switch" />
+
+    <Button
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Connect 1"
+        android:id="@+id/connect1"
+        android:layout_alignTop="@+id/connect2"
+        android:layout_alignParentStart="true" />
 
 </RelativeLayout>
