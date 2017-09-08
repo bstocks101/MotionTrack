@@ -1,0 +1,4 @@
+Android application used to log sensor data as well as interface with wireless MetaWear IMU sensors streaming over bluetooth.
+
+Used as part of undergraduate research project. System is still in use and has been used to produce in excess of 50 datasets
+collected on board a live cheetah.
